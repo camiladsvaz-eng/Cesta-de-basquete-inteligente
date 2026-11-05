@@ -13,9 +13,6 @@ const int buzzer = 8;
 
 int pontos = 0;
 
-int estadoAnterior1 = HIGH;
-int estadoAnterior2 = HIGH;
-int estadoAnterior3 = HIGH;
 int estadoBotaoAnterior = HIGH;
 
 int nivel = 1;
@@ -23,7 +20,7 @@ int nivel = 1;
 const int vel = 11;
 const int motorA = 4;
 const int motorB = 7;
-const int botao = 12;
+const int botao = 14;
 
 unsigned long tempoInicio = 0;
 unsigned long tempoAnterior = 0;
@@ -32,6 +29,7 @@ unsigned long ultimoSegundo = 0;
 bool sentido = false;
 bool jogoAtivo = false;
 bool jogoFinalizado = false;
+bool podeContarPonto = true;
 
 
 // ----------- SOM DO JOGO --------------
@@ -159,6 +157,7 @@ void atualizarDisplay() {
   lcd.print("s");
 }
 
+
 // MOSTRAR MUDANÇA DE NÍVEL
 void mostrarNovoNivel() {
 
@@ -201,9 +200,7 @@ void iniciarJogo() {
   pontos = 0;
   nivel = 1;
 
-  estadoAnterior1 = digitalRead(sensorIR1);
-  estadoAnterior2 = digitalRead(sensorIR2);
-  estadoAnterior3 = digitalRead(sensorIR3);
+  podeContarPonto = true;
 
   tempoInicio = millis();
   ultimoSegundo = 0;
@@ -214,7 +211,6 @@ void iniciarJogo() {
   Serial.println("JOGO INICIADO!");
   Serial.println("Tempo: 45 segundos");
 
-  // ATUALIZAR LCD AO INICIAR O JOGO
   atualizarDisplay();
 }
 
@@ -235,7 +231,6 @@ void finalizarJogo() {
   Serial.println(pontos);
   Serial.println("=======================");
 
-  // MOSTRAR RESULTADO FINAL NO LCD
   finalizarDisplay();
 }
 
@@ -258,7 +253,6 @@ void setup() {
 
   pararMotor();
 
-  // INICIALIZAR LCD
   iniciarDisplay();
 }
 
@@ -266,23 +260,23 @@ void setup() {
 // ---------------- LOOP PRINCIPAL ----------------
 void loop() {
 
-    int leituraBotao = digitalRead(botao);
+  int leituraBotao = digitalRead(botao);
 
-    if (leituraBotao == LOW && estadoBotaoAnterior == HIGH){
+  if (leituraBotao == LOW && estadoBotaoAnterior == HIGH) {
 
-        if (jogoAtivo == false && jogoFinalizado == false) {
-        iniciarJogo();
-        }
+    if (jogoAtivo == false && jogoFinalizado == false) {
+      iniciarJogo();
     }
+  }
 
-    estadoBotaoAnterior = leituraBotao;
-    
+  estadoBotaoAnterior = leituraBotao;
 
-    // Se o jogo acabou, nao executa mais nada
 
+  // SE O JOGO ACABOU, NAO EXECUTA MAIS NADA
   if (jogoFinalizado) {
     return;
   }
+
 
   if (jogoAtivo == true) {
 
@@ -293,6 +287,7 @@ void loop() {
       finalizarJogo();
       return;
     }
+
 
     // ATUALIZAR TEMPO NO MONITOR SERIAL
     unsigned long segundoAtual =
@@ -309,15 +304,19 @@ void loop() {
       atualizarDisplay();
     }
 
-    // LEITURA DO SENSOR IR
+
+    // LEITURA DOS TRES SENSORES
     int leitura1 = digitalRead(sensorIR1);
     int leitura2 = digitalRead(sensorIR2);
     int leitura3 = digitalRead(sensorIR3);
 
 
-    if ((leitura1 == LOW && estadoAnterior1 == HIGH) or 
-        (leitura2 == LOW && estadoAnterior2 == HIGH) or
-        (leitura3 == LOW && estadoAnterior3 == HIGH)) {
+    // SENSOR DO MEIO E PELO MENOS UM LATERAL DEVEM DETECTAR
+    if (podeContarPonto == true &&
+        leitura2 == LOW &&
+        (leitura1 == LOW || leitura3 == LOW)) {
+
+      podeContarPonto = false;
 
       pontos++;
 
@@ -326,8 +325,8 @@ void loop() {
 
       somPonto();
 
-      // ATUALIZAR LCD APÓS MARCAR CESTA
       atualizarDisplay();
+
 
       // SUBIR PARA O NIVEL 2
       if (pontos == 10) {
@@ -339,9 +338,9 @@ void loop() {
 
         somSubidaNivel();
 
-        // MOSTRAR NOVO NÍVEL NO LCD
         mostrarNovoNivel();
       }
+
 
       // SUBIR PARA O NIVEL 3
       else if (pontos == 20) {
@@ -353,14 +352,19 @@ void loop() {
 
         somSubidaNivel();
 
-        // MOSTRAR NOVO NÍVEL NO LCD
         mostrarNovoNivel();
       }
     }
 
-    estadoAnterior1 = leitura1;
-    estadoAnterior2 = leitura2;
-    estadoAnterior3 = leitura3;
+
+    // LIBERAR NOVA PONTUACAO QUANDO TODOS OS SENSORES ESTIVEREM LIVRES
+    if (leitura1 == HIGH &&
+        leitura2 == HIGH &&
+        leitura3 == HIGH) {
+
+      podeContarPonto = true;
+    }
+
 
     controlarMotor();
   }
