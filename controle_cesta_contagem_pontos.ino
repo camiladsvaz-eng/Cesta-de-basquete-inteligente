@@ -138,6 +138,10 @@ void telaInicial() {
 // ATUALIZAR DISPLAY DURANTE O JOGO
 void atualizarDisplay() {
 
+  unsigned long tempoAtual = millis();
+
+  int tempoRestante = 45 - ((tempoAtual - tempoInicio) / 1000);
+
   lcd.clear();
 
   lcd.setCursor(0, 0);
@@ -147,8 +151,11 @@ void atualizarDisplay() {
   lcd.setCursor(0, 1);
   lcd.print("NIVEL: ");
   lcd.print(nivel);
-}
 
+  lcd.setCursor(10, 1);
+  lcd.print(tempoRestante);
+  lcd.print("s");
+}
 
 // MOSTRAR MUDANÇA DE NÍVEL
 void mostrarNovoNivel() {
@@ -283,6 +290,8 @@ void loop() {
       Serial.print("Tempo restante: ");
       Serial.print(45 - segundoAtual);
       Serial.println(" segundos");
+
+      atualizarDisplay();
     }
 
     // LEITURA DO SENSOR IR
