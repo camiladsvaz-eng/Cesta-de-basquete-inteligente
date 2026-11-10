@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <EEPROM.h>
 
 // DISPLAY LCD
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -40,8 +41,8 @@ const int sequencia[8][4] = {
 const int passosPorVolta = 4096;
 
 // Limites angulares
-const int limiteNivel2 = 341; // Aproximadamente 30 graus
-const int limiteNivel3 = 512; // Aproximadamente 45 graus
+const int limiteNivel2 = 341;
+const int limiteNivel3 = 512;
 
 int indicePasso = 0;
 
@@ -59,17 +60,27 @@ const unsigned long intervaloPasso = 3;
 int pontos = 0;
 int nivel = 1;
 
-int estadoAnterior1 = HIGH;
-int estadoAnterior2 = HIGH;
-int estadoAnterior3 = HIGH;
-
 int estadoBotaoAnterior = HIGH;
+int ultimaLeituraBotao = HIGH;
+
+unsigned long ultimoTempoDebounce = 0;
+const unsigned long tempoDebounce = 50;
 
 unsigned long tempoInicio = 0;
 unsigned long ultimoSegundo = 0;
 
 bool jogoAtivo = false;
 bool jogoFinalizado = false;
+bool telaHighScore = false;
+
+bool podeContarPonto = true;
+
+
+// ---------------- RECORDES ----------------
+
+const int enderecoRecorde = 0;
+
+int recorde = 0;
 
 
 // ---------------- SOM DO JOGO ----------------
@@ -303,9 +314,26 @@ void finalizarDisplay() {
 }
 
 
+// Tela de High Score
+void mostrarHighScore() {
+
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  lcd.print("HIGH SCORE: ");
+  lcd.print(recorde);
+
+  lcd.setCursor(0, 1);
+  lcd.print("JOGAR NOVAMENTE?");
+}
+
+
 // ---------------- INICIO DO JOGO -----------------
 
 void iniciarJogo() {
+
+  jogoFinalizado = false;
+  telaHighScore = false;
 
   Serial.println("Preparando partida...");
 
@@ -314,9 +342,10 @@ void iniciarJogo() {
   pontos = 0;
   nivel = 1;
 
-  estadoAnterior1 = digitalRead(sensorIR1);
-  estadoAnterior2 = digitalRead(sensorIR2);
-  estadoAnterior3 = digitalRead(sensorIR3);
+  podeContarPonto =
+    digitalRead(sensorIR1) == HIGH &&
+    digitalRead(sensorIR2) == HIGH &&
+    digitalRead(sensorIR3) == HIGH;
 
   tempoInicio = millis();
   ultimoSegundo = 0;
@@ -342,12 +371,22 @@ void finalizarJogo() {
 
   desligarMotor();
 
+  // VERIFICAR E SALVAR NOVO RECORDE
+  if (pontos > recorde) {
+
+    recorde = pontos;
+
+    EEPROM.put(enderecoRecorde, recorde);
+  }
+
   somFimJogo();
 
   Serial.println();
   Serial.println("===== FIM DE JOGO =====");
   Serial.print("Pontuacao final: ");
   Serial.println(pontos);
+  Serial.print("Recorde: ");
+  Serial.println(recorde);
   Serial.println("=======================");
 
   finalizarDisplay();
@@ -374,6 +413,13 @@ void setup() {
 
   digitalWrite(buzzer, LOW);
 
+  // CARREGAR RECORDE DA EEPROM
+  EEPROM.get(enderecoRecorde, recorde);
+
+  if (recorde < 0) {
+    recorde = 0;
+  }
+
   desligarMotor();
 
   iniciarDisplay();
@@ -384,23 +430,48 @@ void setup() {
 
 void loop() {
 
-  // Leitura do botao PLAY
+  // LEITURA DO BOTAO PLAY
   int leituraBotao = digitalRead(botao);
 
-  if (leituraBotao == LOW &&
-      estadoBotaoAnterior == HIGH) {
+  // DEBOUNCE
+  if (leituraBotao != ultimaLeituraBotao) {
+    ultimoTempoDebounce = millis();
+  }
 
-    if (jogoAtivo == false &&
-        jogoFinalizado == false) {
+  if (millis() - ultimoTempoDebounce > tempoDebounce) {
 
-      iniciarJogo();
+    if (leituraBotao != estadoBotaoAnterior) {
+
+      estadoBotaoAnterior = leituraBotao;
+
+      if (estadoBotaoAnterior == LOW) {
+
+        if (jogoAtivo == false &&
+            jogoFinalizado == false) {
+
+          iniciarJogo();
+        }
+
+        else if (jogoFinalizado == true &&
+                 telaHighScore == false) {
+
+          telaHighScore = true;
+          mostrarHighScore();
+        }
+
+        else if (jogoFinalizado == true &&
+                 telaHighScore == true) {
+
+          iniciarJogo();
+        }
+      }
     }
   }
 
-  estadoBotaoAnterior = leituraBotao;
+  ultimaLeituraBotao = leituraBotao;
 
 
-  // Se o jogo acabou, nao executa mais nada
+  // SE O JOGO ACABOU, NAO EXECUTA MAIS NADA
   if (jogoFinalizado) {
     return;
   }
@@ -411,7 +482,7 @@ void loop() {
     unsigned long tempoAtual = millis();
 
 
-    // Verificar tempo da partida
+    // VERIFICAR TEMPO DA PARTIDA
     if (tempoAtual - tempoInicio >= 45000) {
 
       finalizarJogo();
@@ -419,7 +490,7 @@ void loop() {
     }
 
 
-    // Atualizar cronometro
+    // ATUALIZAR CRONOMETRO
     unsigned long segundoAtual =
       (tempoAtual - tempoInicio) / 1000;
 
@@ -435,16 +506,18 @@ void loop() {
     }
 
 
-    // Leitura dos tres sensores IR
+    // LEITURA DOS TRES SENSORES IR
     int leitura1 = digitalRead(sensorIR1);
     int leitura2 = digitalRead(sensorIR2);
     int leitura3 = digitalRead(sensorIR3);
 
 
-    // Detectar uma nova cesta
-    if ((leitura1 == LOW && estadoAnterior1 == HIGH) ||
-        (leitura2 == LOW && estadoAnterior2 == HIGH) ||
-        (leitura3 == LOW && estadoAnterior3 == HIGH)) {
+    // SENSOR DO MEIO E PELO MENOS UM LATERAL DEVEM DETECTAR
+    if (podeContarPonto == true &&
+        leitura2 == LOW &&
+        (leitura1 == LOW || leitura3 == LOW)) {
+
+      podeContarPonto = false;
 
       pontos++;
 
@@ -488,13 +561,16 @@ void loop() {
     }
 
 
-    // Atualizar estados anteriores dos sensores
-    estadoAnterior1 = leitura1;
-    estadoAnterior2 = leitura2;
-    estadoAnterior3 = leitura3;
+    // LIBERAR NOVA PONTUACAO QUANDO TODOS OS SENSORES ESTIVEREM LIVRES
+    if (leitura1 == HIGH &&
+        leitura2 == HIGH &&
+        leitura3 == HIGH) {
+
+      podeContarPonto = true;
+    }
 
 
-    // Atualizar movimentacao do motor
+    // ATUALIZAR MOVIMENTACAO DO MOTOR
     controlarMotor();
   }
 }
